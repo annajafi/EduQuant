@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pathway Academy</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {50:'#eef2ff',100:'#e0e7ff',200:'#c7d2fe',300:'#a5b4fc',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3',900:'#312e81'}
+          },
+          boxShadow: { soft: '0 10px 25px rgba(0,0,0,0.08)' }
+        }
+      }
+    }
+  </script>
+  <style>
+    html { scroll-behavior: smooth; }
+    .lock-stripes { background-image: repeating-linear-gradient(45deg,rgba(255,255,255,.08) 0px,rgba(255,255,255,.08) 10px,rgba(255,255,255,.18) 10px,rgba(255,255,255,.18) 20px); }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <div id="app" class="min-h-screen flex flex-col"></div>
+
+  <script>
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+    const STORAGE_KEY = 'pathway_academy_v2';
+
+    const initialData = () => ({
+      user: { name: 'Learner' },
+      courses: {
+        main: {
+          id: 'main',
+          title: 'Foundations Track',
+          description: 'Start here. Complete all 4 parts to unlock the rest. Core skills, drills, and projects.',
+          subcourses: [
+            { id: 'm1', title: 'Part 1 · Basics', units: 2, lessonsPerUnit: 3, lessons: [] },
+            { id: 'm2', title: 'Part 2 · Practice', units: 2, lessonsPerUnit: 3, lessons: [] },
+            { id: 'm3', title: 'Part 3 · Projects', units: 2, lessonsPerUnit: 3, lessons: [] },
+            { id: 'm4', title: 'Part 4 · Review', units: 2, lessonsPerUnit: 3, lessons: [] },
+          ],
+          certificateAwarded: false
+        },
+        others: [
+          { id: 'c1', title: 'Algebra I', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+          { id: 'c2', title: 'Geometry', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+          { id: 'c3', title: 'Statistics', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+          { id: 'c4', title: 'Computer Science', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+          { id: 'c5', title: 'US History', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+          { id: 'c6', title: 'Biology', units: 2, lessonsPerUnit: 3, lessons: [], certificateAwarded: false },
+        ],
+      },
+      certificates: {}
+    });
+
+    function seedLessonsIfNeeded(state) {
+      // Create lesson requirement objects (video, quiz, practice) for each course if empty
+      const makeLessons = (units, per) => Array.from({length: units*per}).map((_,i)=>({
+        id: i,
+        title: `Lesson ${i+1}`,
+        reqs: {
+          videoWatched: false,
+          quizPassed: false,
+          practiceDone: false
+        },
+        completed: false
+      }));
+
+      state.courses.main.subcourses.forEach(sc => {
+        if (!sc.lessons || sc.lessons.length === 0) sc.lessons = makeLessons(sc.units, sc.lessonsPerUnit);
+      });
+      state.courses.others.forEach(c => {
+        if (!c.lessons || c.lessons.length === 0) c.lessons = makeLessons(c.units, c.lessonsPerUnit);
+      });
+    }
+
+    function loadState(){
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || initialData(); }
+      catch { return initialData(); }
+    }
+    let state = loadState();
+    seedLessonsIfNeeded(state);
+
+    function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    function route(){
+      const hash = location.hash || '#/home';
+      const [_, root, a, b, c, d] = hash.split('/');
+      if (root === 'home') return renderHome();
+      if (root === 'course' && a === 'main' && !b) return renderMainCourse();
+      if (root === 'course' && a === 'main' && b === 'sub' && c && !d) return renderSubcourse(c);
+      if (root === 'course' && a === 'main' && b === 'sub' && c && d?.startsWith('lesson')) return renderLesson('main', c, d.split(':')[1]);
+      if (root === 'course' && a && a !== 'main' && !b) return renderOtherCourse(a);
+      if (root === 'course' && a && b?.startsWith('lesson')) return renderLesson(a, null, b.split(':')[1]);
+      if (root === 'certificate' && a === 'main') return renderCertificate('main');
+      renderHome();
+    }
+
+    function Header(){
+      return `
+      <header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex items-center justify-between h-16">
+            <div class="flex items-center gap-3">
+              <button id="exploreBtn" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-medium">Explore</button>
+              <div class="relative">
+                <input id="searchInput" type="search" placeholder="Search" class="w-48 sm:w-64 rounded-xl bg-slate-100 focus:bg-white border border-transparent focus:border-brand-300 outline-none px-3 py-1.5" />
+                <div class="absolute right-2 top-1.5 text-slate-400">⌘K</div>
+              </div>
+            </div>
+            <a href="#/home" class="text-xl sm:text-2xl font-bold tracking-tight text-brand-700">Pathway Academy</a>
+            <div class="flex items-center gap-3">
+              <span class="text-sm text-slate-600 hidden sm:inline">Hi, ${state.user.name}</span>
+              <button id="profileBtn" class="rounded-full w-9 h-9 bg-gradient-to-br from-brand-500 to-brand-700 text-white grid place-items-center shadow-soft" title="Profile">👤</button>
+            </div>
+          </div>
+        </div>
+      </header>`
+    }
+
+    function ProgressBar({current,total}){
+      const pct = total? Math.round((current/total)*100):0;
+      return `
+      <div class="w-full">
+        <div class="flex items-center justify-between text-xs text-slate-500 mb-1"><span>${pct}%</span><span>${current} / ${total}</span></div>
+        <div class="h-2 w-full rounded-full bg-slate-200 overflow-hidden"><div class="h-2 bg-brand-500" style="width:${pct}%"></div></div>
+      </div>`
+    }
+
+    const LockedBadge = () => `<span class="inline-flex items-center gap-1 text-xs font-medium text-slate-600 bg-slate-100 rounded-full px-2 py-1">🔒 Locked</span>`;
+    const UnlockedBadge = () => `<span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-full px-2 py-1">🔓 Unlocked</span>`;
+    const CertificateBadge = () => `<span class="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-100 rounded-full px-2 py-1">🏅 Certificate</span>`;
+
+    function lessonCounts(course){
+      const total = course.units * course.lessonsPerUnit;
+      const done = (course.lessons||[]).filter(l=>l.completed).length;
+      return {total, done};
+    }
+
+    function mainCounts(){
+      const total = state.courses.main.subcourses.reduce((t,sc)=>t+sc.units*sc.lessonsPerUnit,0);
+      const done = state.courses.main.subcourses.reduce((t,sc)=>t+sc.lessons.filter(l=>l.completed).length,0);
+      return {total, done};
+    }
+
+    function renderHome(){
+      const app = $('#app');
+      const {total: mainTotal, done: mainDone} = mainCounts();
+      const mainComplete = mainDone >= mainTotal;
+
+      const otherCards = state.courses.others.map(c=>{
+        const {total,done} = lessonCounts(c);
+        const complete = done>=total;
+        const locked = !mainComplete;
+        return `
+        <a href="${locked? '#/home' : `#/course/${c.id}`}" class="group relative rounded-2xl p-5 border ${locked? 'border-slate-200':'border-brand-200'} bg-white shadow-soft hover:shadow-lg transition block">
+          ${locked? `<div class="absolute inset-0 rounded-2xl bg-slate-700/40 lock-stripes grid place-items-center"><div class="text-white text-sm font-semibold">Complete Foundations first to unlock</div></div>`:''}
+          <div class="flex items-start justify-between">
+            <h3 class="text-lg font-semibold text-slate-800">${c.title}</h3>
+            <div class="flex items-center gap-2">${locked? LockedBadge(): UnlockedBadge()} ${complete? CertificateBadge(): ''}</div>
+          </div>
+          <p class="text-sm text-slate-500 mt-1">${c.units} units · ${c.lessonsPerUnit} lessons/unit</p>
+          <div class="mt-4">${ProgressBar({current:done,total})}</div>
+        </a>`
+      }).map(card=>`<div class="w-full md:w-1/2">${card}</div>`).join('');
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <section class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            <div class="rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-soft">
+              <div class="flex flex-col lg:flex-row gap-6 lg:items-center">
+                <div class="flex-1">
+                  <div class="flex items-center gap-3 mb-2">
+                    <span class="inline-flex items-center text-xs font-semibold px-2 py-1 rounded-full bg-white/20">Main Course</span>
+                    ${mainComplete? CertificateBadge(): ''}
+                  </div>
+                  <h2 class="text-2xl sm:text-3xl font-bold">${state.courses.main.title}</h2>
+                  <p class="mt-2 text-white/90 max-w-2xl">${state.courses.main.description}</p>
+                  <div class="mt-5 max-w-md">${ProgressBar({current:mainDone,total:mainTotal})}</div>
+                </div>
+                <div class="shrink-0">
+                  <a href="#/course/main" class="inline-flex items-center gap-2 bg-white text-brand-700 font-semibold px-5 py-3 rounded-2xl shadow-soft hover:translate-y-[-1px] transition">Continue →</a>
+                </div>
+              </div>
+            </div>
+            <h3 class="mt-8 mb-4 text-lg font-semibold text-slate-700">More courses</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">${otherCards}</div>
+          </section>
+        </main>
+        ${Footer()}
+      `;
+      bindHeader();
+    }
+
+    function renderMainCourse(){
+      const app = $('#app');
+      const cards = state.courses.main.subcourses.map(sc=>{
+        const total = sc.units * sc.lessonsPerUnit;
+        const done = sc.lessons.filter(l=>l.completed).length;
+        const complete = done>=total;
+        return `
+        <a href="#/course/main/sub/${sc.id}" class="block rounded-2xl border border-slate-200 bg-white p-5 shadow-soft hover:shadow-lg transition">
+          <div class="flex items-start justify-between">
+            <h3 class="text-lg font-semibold">${sc.title}</h3>
+            ${complete? '<span class="text-emerald-700 text-sm">✓ All lessons complete</span>':''}
+          </div>
+          <p class="text-sm text-slate-500">${sc.units} units · ${sc.lessonsPerUnit} lessons/unit</p>
+          <div class="mt-4">${ProgressBar({current:done,total})}</div>
+        </a>`
+      }).join('');
+
+      const {total:mainTotal, done:mainDone} = mainCounts();
+      const allComplete = mainDone>=mainTotal;
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-2xl font-bold">${state.courses.main.title}</h2>
+              <a href="#/home" class="text-brand-700 hover:underline">← Back</a>
+            </div>
+            <p class="text-slate-600 mb-6">Complete all 4 parts. Certificates are awarded <strong>only after all parts are finished</strong>.</p>
+            <div class="grid sm:grid-cols-2 gap-5">${cards}</div>
+            <div class="mt-6">${ProgressBar({current:mainDone,total:mainTotal})}</div>
+            ${allComplete? `<div class="mt-4"><a href="#/certificate/main" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold shadow-soft">View Foundations Certificate</a></div>`:''}
+          </div>
+        </main>
+        ${Footer()}
+      `;
+      bindHeader();
+    }
+
+    function renderSubcourse(subId){
+      const app = $('#app');
+      const sc = state.courses.main.subcourses.find(s=>s.id===subId);
+      if(!sc) return renderMainCourse();
+      const total = sc.units*sc.lessonsPerUnit;
+      const done = sc.lessons.filter(l=>l.completed).length;
+
+      const unitsHTML = Array.from({length: sc.units}).map((_,ui)=>{
+        const cards = Array.from({length: sc.lessonsPerUnit}).map((_,li)=>{
+          const idx = ui*sc.lessonsPerUnit + li;
+          const L = sc.lessons[idx];
+          const checked = L.completed;
+          return `
+            <a href="#/course/main/sub/${sc.id}/lesson:${idx}" class="group rounded-xl border ${checked? 'border-emerald-300 bg-emerald-50':'border-slate-200 bg-white'} p-4 hover:shadow-md text-left transition block">
+              <div class="flex items-center justify-between">
+                <span class="font-medium">${L.title}</span>
+                <span class="text-sm ${checked? 'text-emerald-700':'text-slate-400'}">${checked? '✔ Done' : '○ Incomplete'}</span>
+              </div>
+              <p class="text-sm mt-1 text-slate-500">Watch the video, pass the quiz, and finish practice.</p>
+            </a>`
+        }).join('');
+        return `<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft"><h3 class="font-semibold mb-3">Unit ${ui+1}</h3><div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${cards}</div></div>`
+      }).join('');
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <a href="#/course/main" class="text-brand-700 hover:underline">← Back to Foundations</a>
+                <h2 class="text-2xl font-bold mt-1">${sc.title}</h2>
+                <p class="text-slate-600">Complete each lesson via its tasks.</p>
+              </div>
+              <div class="w-64">${ProgressBar({current:done,total})}</div>
+            </div>
+            <div class="space-y-5">${unitsHTML}</div>
+          </div>
+        </main>
+        ${Footer()}
+      `;
+      bindHeader();
+    }
+
+    function renderOtherCourse(courseId){
+      const app = $('#app');
+      const mainComplete = mainCounts().done>=mainCounts().total;
+      if(!mainComplete) return renderHome();
+      const course = state.courses.others.find(c=>c.id===courseId);
+      if(!course) return renderHome();
+      const {total,done} = lessonCounts(course);
+      const unitsHTML = Array.from({length: course.units}).map((_,ui)=>{
+        const cards = Array.from({length: course.lessonsPerUnit}).map((_,li)=>{
+          const idx = ui*course.lessonsPerUnit + li;
+          const L = course.lessons[idx];
+          const checked = L.completed;
+          return `
+            <a href="#/course/${course.id}/lesson:${idx}" class="group rounded-xl border ${checked? 'border-emerald-300 bg-emerald-50':'border-slate-200 bg-white'} p-4 hover:shadow-md text-left transition block">
+              <div class="flex items-center justify-between">
+                <span class="font-medium">${L.title}</span>
+                <span class="text-sm ${checked? 'text-emerald-700':'text-slate-400'}">${checked? '✔ Done' : '○ Incomplete'}</span>
+              </div>
+              <p class="text-sm mt-1 text-slate-500">Watch, quiz, practice to finish.</p>
+            </a>`
+        }).join('');
+        return `<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft"><h3 class="font-semibold mb-3">Unit ${ui+1}</h3><div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${cards}</div></div>`
+      }).join('');
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <a href="#/home" class="text-brand-700 hover:underline">← Back home</a>
+                <h2 class="text-2xl font-bold mt-1">${course.title}</h2>
+                <p class="text-slate-600">Complete lessons to earn a certificate.</p>
+              </div>
+              <div class="w-64">${ProgressBar({current:done,total})}</div>
+            </div>
+            <div class="space-y-5">${unitsHTML}</div>
+            ${done>=total? `<div class="mt-6"><a href="#/certificate/${course.id}" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold shadow-soft">View Certificate</a></div>`:''}
+          </div>
+        </main>
+        ${Footer()}
+      `;
+      bindHeader();
+    }
+
+    // Lesson detail with required tasks (video timer, quiz, practice)
+    function renderLesson(courseKeyOrId, subIdOrNull, lessonIdxStr){
+      const app = $('#app');
+      let courseTitle = '';
+      let lesson = null;
+      let parentRouteBack = '#/home';
+
+      if(courseKeyOrId==='main'){
+        const sc = state.courses.main.subcourses.find(s=>s.id===subIdOrNull);
+        if(!sc) return renderMainCourse();
+        const idx = Number(lessonIdxStr);
+        lesson = sc.lessons[idx];
+        courseTitle = `${state.courses.main.title} — ${sc.title}`;
+        parentRouteBack = `#/course/main/sub/${sc.id}`;
+        lesson._save = ()=>{ saveState(); checkMainCertificate(); };
+      } else {
+        const course = state.courses.others.find(c=>c.id===courseKeyOrId);
+        if(!course) return renderHome();
+        const idx = Number(lessonIdxStr);
+        lesson = course.lessons[idx];
+        courseTitle = course.title;
+        parentRouteBack = `#/course/${course.id}`;
+        lesson._save = ()=>{ saveState(); maybeAward(course.id); };
+      }
+
+      if(!lesson) return location.hash = parentRouteBack;
+
+      const allDone = lesson.reqs.videoWatched && lesson.reqs.quizPassed && lesson.reqs.practiceDone;
+      if(allDone && !lesson.completed){ lesson.completed = true; lesson._save(); }
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-8">
+            <a href="${parentRouteBack}" class="text-brand-700 hover:underline">← Back</a>
+            <h1 class="text-2xl font-bold mt-2">${courseTitle}</h1>
+            <h2 class="text-lg mt-1">${lesson.title}</h2>
+
+            <!-- Video Task (simulated) -->
+            <section class="mt-6 rounded-2xl bg-white border border-slate-200 p-5 shadow-soft">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">1) Watch the video</h3>
+                <span class="text-sm ${lesson.reqs.videoWatched? 'text-emerald-700':'text-slate-400'}">${lesson.reqs.videoWatched? '✔ Completed':'○ Not completed'}</span>
+              </div>
+              <p class="text-sm text-slate-500 mt-1">Click play and watch until the end (simulated 20s).</p>
+              <div class="mt-3">
+                <div class="w-full h-2 bg-slate-200 rounded-full overflow-hidden"><div id="vidBar" class="h-2 bg-brand-500" style="width:0%"></div></div>
+                <div class="mt-3 flex gap-2">
+                  <button id="playVid" class="px-3 py-1.5 rounded-xl bg-slate-900 text-white">Play</button>
+                  <button id="resetVid" class="px-3 py-1.5 rounded-xl bg-slate-200">Reset</button>
+                </div>
+              </div>
+            </section>
+
+            <!-- Quiz Task -->
+            <section class="mt-6 rounded-2xl bg-white border border-slate-200 p-5 shadow-soft">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">2) Pass the quiz</h3>
+                <span class="text-sm ${lesson.reqs.quizPassed? 'text-emerald-700':'text-slate-400'}">${lesson.reqs.quizPassed? '✔ Passed':'○ Not passed'}</span>
+              </div>
+              <form id="quiz" class="mt-3 space-y-4">
+                <div>
+                  <p class="text-sm font-medium">Q1. 2 + 2 = ?</p>
+                  <label class="block text-sm"><input type="radio" name="q1" value="3"> 3</label>
+                  <label class="block text-sm"><input type="radio" name="q1" value="4"> 4</label>
+                </div>
+                <div>
+                  <p class="text-sm font-medium">Q2. Select the prime</p>
+                  <label class="block text-sm"><input type="radio" name="q2" value="8"> 8</label>
+                  <label class="block text-sm"><input type="radio" name="q2" value="11"> 11</label>
+                </div>
+                <div>
+                  <p class="text-sm font-medium">Q3. HTML stands for?</p>
+                  <label class="block text-sm"><input type="radio" name="q3" value="markup"> HyperText Markup Language</label>
+                  <label class="block text-sm"><input type="radio" name="q3" value="makeup"> Hyperlink Makeup Language</label>
+                </div>
+                <button class="px-3 py-1.5 rounded-xl bg-slate-900 text-white" type="submit">Submit quiz</button>
+                <div id="quizMsg" class="text-sm mt-2"></div>
+              </form>
+            </section>
+
+            <!-- Practice Task -->
+            <section class="mt-6 rounded-2xl bg-white border border-slate-200 p-5 shadow-soft">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">3) Complete practice</h3>
+                <span class="text-sm ${lesson.reqs.practiceDone? 'text-emerald-700':'text-slate-400'}">${lesson.reqs.practiceDone? '✔ Done':'○ Not done'}</span>
+              </div>
+              <p class="text-sm text-slate-500 mt-1">Drag the correct term into place.</p>
+              <div class="mt-3">
+                <div class="flex items-center gap-3">
+                  <div class="p-3 rounded-xl bg-slate-100" id="dropZone">[ ____ ] language</div>
+                  <div class="flex gap-2">
+                    <button draggable="true" data-term="Markup" class="px-3 py-1.5 rounded-xl bg-white border">Markup</button>
+                    <button draggable="true" data-term="Makeup" class="px-3 py-1.5 rounded-xl bg-white border">Makeup</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="mt-8 flex items-center gap-3">
+              ${lesson.completed? `<span class="text-emerald-700 font-semibold">Lesson completed ✔</span>`: '<span class="text-slate-500">Finish all 3 tasks to complete the lesson.</span>'}
+              <a href="${parentRouteBack}" class="px-4 py-2 rounded-xl bg-slate-200">Back</a>
+            </div>
+          </div>
+        </main>
+        ${Footer()}
+      `;
+
+      bindHeader();
+
+      // Simulated video timer (20s)
+      let timer=null, t=0, duration=20;
+      const bar = $('#vidBar');
+      const play = $('#playVid');
+      const reset = $('#resetVid');
+      const startTimer = ()=>{
+        clearInterval(timer);
+        timer = setInterval(()=>{
+          t++; const pct = Math.min(100, Math.round((t/duration)*100));
+          bar.style.width = pct+'%';
+          if(t>=duration){ clearInterval(timer); lesson.reqs.videoWatched = true; lesson._save(); route(); }
+        }, 1000);
+      };
+      play?.addEventListener('click', ()=>{ if(t>=duration) return; startTimer(); });
+      reset?.addEventListener('click', ()=>{ clearInterval(timer); t=0; bar.style.width='0%'; lesson.reqs.videoWatched=false; lesson.completed=false; lesson._save(); route(); });
+
+      // Quiz logic (need 2/3 correct)
+      $('#quiz')?.addEventListener('submit', (e)=>{
+        e.preventDefault();
+        const data = new FormData(e.target);
+        let score = 0;
+        if(data.get('q1')==='4') score++;
+        if(data.get('q2')==='11') score++;
+        if(data.get('q3')==='markup') score++;
+        const passed = score>=2;
+        $('#quizMsg').textContent = passed? `Passed (${score}/3)` : `Try again (${score}/3)`;
+        if(passed){ lesson.reqs.quizPassed = true; lesson._save(); route(); }
+      });
+
+      // Practice drag-drop
+      const drop = $('#dropZone');
+      $$('[data-term]').forEach(btn=>{
+        btn.addEventListener('dragstart', ev=>{ ev.dataTransfer.setData('text/plain', btn.dataset.term); });
+      });
+      drop.addEventListener('dragover', ev=>{ ev.preventDefault(); });
+      drop.addEventListener('drop', ev=>{
+        ev.preventDefault();
+        const term = ev.dataTransfer.getData('text/plain');
+        drop.textContent = `[ ${term} ] language`;
+        const correct = term === 'Markup';
+        if(correct){ lesson.reqs.practiceDone = true; lesson._save(); route(); }
+      });
+    }
+
+    function renderCertificate(courseId){
+      const app = $('#app');
+      const name = state.user.name || 'Learner';
+      let title = 'Course';
+      if(courseId==='main') title = state.courses.main.title;
+      const oc = state.courses.others.find(c=>c.id===courseId);
+      if(oc) title = oc.title;
+
+      app.innerHTML = `
+        ${Header()}
+        <main class="flex-1">
+          <div class="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-12">
+            <div class="rounded-3xl bg-white border border-slate-200 shadow-soft p-8">
+              <div class="text-center">
+                <div class="text-sm text-slate-500">Certificate of Completion</div>
+                <h1 class="text-3xl font-extrabold mt-1">${title}</h1>
+                <div class="mt-6 rounded-2xl border-4 border-brand-300 p-8">
+                  <p class="text-lg">This certifies that</p>
+                  <p class="text-2xl font-bold mt-1">${name}</p>
+                  <p class="mt-3">has successfully completed the course requirements.</p>
+                  <div class="mt-6 text-sm text-slate-500">Date: ${new Date().toLocaleDateString()}</div>
+                </div>
+                <div class="mt-6 flex items-center justify-center gap-3">
+                  <button id="printBtn" class="px-4 py-2 rounded-xl bg-slate-900 text-white">Print / Save as PDF</button>
+                  <a href="#/home" class="px-4 py-2 rounded-xl bg-slate-200">Back home</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+        ${Footer()}
+      `;
+      bindHeader();
+      $('#printBtn')?.addEventListener('click', ()=>window.print());
+    }
+
+    function Footer(){
+      const mainC = mainCounts();
+      const unlocked = mainC.done>=mainC.total;
+      return `
+        <footer class="mt-auto border-t bg-white/70">
+          <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 text-sm text-slate-500 flex items-center justify-between">
+            <div>© ${new Date().getFullYear()} Pathway Academy</div>
+            <div class="flex items-center gap-3">
+              <span class="hidden sm:inline">${unlocked? 'All unlocked':'Main course in progress'}</span>
+              <a class="text-brand-700 hover:underline" href="#/home">Home</a>
+            </div>
+          </div>
+        </footer>`
+    }
+
+    function bindHeader(){
+      $('#profileBtn')?.addEventListener('click',()=>{
+        const name = prompt('Your display name:', state.user.name || '');
+        if(name!==null){ state.user.name = (name.trim()||'Learner'); saveState(); route(); }
+      });
+      $('#searchInput')?.addEventListener('keydown',(e)=>{
+        if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k'){ e.preventDefault(); $('#searchInput').focus(); }
+        if(e.key==='Enter'){
+          const q = e.target.value.toLowerCase(); if(!q) return;
+          const main = state.courses.main;
+          if(main.title.toLowerCase().includes(q)) return location.hash = '#/course/main';
+          const sc = main.subcourses.find(s=>s.title.toLowerCase().includes(q)); if(sc) return location.hash = `#/course/main/sub/${sc.id}`;
+          const oc = state.courses.others.find(c=>c.title.toLowerCase().includes(q)); if(oc) return location.hash = `#/course/${oc.id}`;
+          alert('No matching course found.');
+        }
+      });
+    }
+
+    function checkMainCertificate(){
+      const {total,done} = mainCounts();
+      if(done>=total && !state.courses.main.certificateAwarded){
+        state.courses.main.certificateAwarded = true;
+        state.certificates['main'] = { name: state.user.name, dateISO: new Date().toISOString() };
+        saveState();
+      }
+    }
+
+    function maybeAward(courseId){
+      const course = state.courses.others.find(c=>c.id===courseId);
+      if(!course) return;
+      const {total,done} = lessonCounts(course);
+      if(done>=total && !course.certificateAwarded){
+        course.certificateAwarded = true;
+        state.certificates[courseId] = { name: state.user.name, dateISO: new Date().toISOString() };
+        saveState();
+      }
+    }
+
+    window.addEventListener('hashchange', route);
+    route();
+  </script>
+</body>
+</html>
